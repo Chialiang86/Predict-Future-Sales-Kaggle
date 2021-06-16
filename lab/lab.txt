@@ -25,3 +25,7 @@
 # lab07
 - test three model with datetime function, avg price, true id
 - col : 'shop_id', 'item_id', '2013-01' ... '2015-10'
+
+# lab08
+- test three model with datetime function, avg price, true id, if id not in history -> predict 0
+- col : 'shop_id', 'item_id', '2013-01' ... '2015-10'

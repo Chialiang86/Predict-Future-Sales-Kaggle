@@ -2,14 +2,20 @@ from math import log10, log2
 import numpy as np
 import pandas as pd
 import os
+
+from pandas.core.frame import DataFrame
 import seaborn as sns
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+from sklearn.inspection import permutation_importance
 from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.linear_model import LinearRegression
 from xgboost import XGBRegressor
+
+mpl.rcParams['agg.path.chunksize'] = 10000
 
 # read data
 print('reading data...')
@@ -19,6 +25,7 @@ item_categories = pd.read_csv("competitive-data-science-predict-future-sales/ite
 items = pd.read_csv("competitive-data-science-predict-future-sales/items.csv")
 shops = pd.read_csv("competitive-data-science-predict-future-sales/shops.csv")
 sample_submission = pd.read_csv("competitive-data-science-predict-future-sales/sample_submission.csv")
+print(item_categories.head())
 
 # set item_id -> item_category_id dict
 print('set item_id -> item_category_id dict...')
@@ -36,14 +43,15 @@ print('Remove the outliers (item_price)...')
 data_train.drop(data_train[data_train['item_price'] > 100000].index, inplace=True)
 print('Remove the outliers (item_cnt_day)...')
 data_train.drop(data_train[data_train['item_cnt_day'] > 1500].index, inplace=True)
+idx = data_train[data_train['item_cnt_day'] < 0].index
+data_train.at[idx, 'item_cnt_day'] = 0
+
 
 # change date type to datetime
 print('change date type to datetime...')
 data_train['date'].astype(str)
 data_train['date'] = data_train['date'].apply(lambda x: (x.split('.')[2] + '-' + x.split('.')[1]))
-# data_train['date'] = pd.to_datetime(data_train['date'])
-# data_train['date'] = data_train['date'].apply(lambda x: x.strftime('%Y-%m'))
-print(data_train.head())
+print(data_train)
 
 # Drop columns
 print('Drop column')
@@ -77,16 +85,15 @@ while i < 35:
         i += 1
         if i >= 35:
             break
-print(cols)
 df_train = pd.DataFrame(df_train)[cols]
-print(df_train.head())
+print(df_train)
 
 # Data test
 print('Data test')
 df_test = pd.merge(data_test, df_train, on=['shop_id','item_id'], how='left')
 df_test.drop(['ID'], axis=1, inplace=True)
 df_test = df_test.fillna(0)
-print(df_test.head())
+print(data_test.head())
 
 # # update df_train
 # print('replacing item id of df_train by cate id...')
@@ -100,56 +107,49 @@ print(df_test.head())
 
 # X, Y setting
 print('X, Y setting')
-X_train = df_train.drop(['shop_id','2015-10'], axis = 1)
+X_train = df_train.drop(['2015-10'], axis = 1)
 Y_train = df_train['2015-10'].values
+print(X_train.shape, Y_train.shape)
 
 print('test setting')
-x_test = df_test.drop(['shop_id','2013-01'], axis=1)
+x_test = df_test.drop(['2013-01'], axis=1)
+print(x_test.shape)
 
 # Split the data
 print('split the data')
 x_train, x_val, y_train, y_val = train_test_split(X_train, Y_train, test_size=0.2, random_state=0)
-print(x_train, y_train)
-print(x_val, y_val)
-
-# linear regression
-print('linear regression')
-LR = LinearRegression()
-LR.fit(x_train, y_train)
-
-# plot prediction result
-y_pre_t = LR.predict(x_train)
-y_pre_v = LR.predict(x_val)
-diff_t = y_pre_t - y_train
-diff_v = y_pre_v - y_val
-
-
-fig, ax = plt.subplots(2, figsize=(20, 10))
-ax[0].set_title('LR res train')
-ax[0].plot(diff_t, label='diff')
-ax[0].legend(loc='upper left')
-ax[1].set_title('LR res val')
-ax[1].plot(diff_v, label='diff')
-ax[1].legend(loc='upper left')
-plt.savefig('LR_predict.png')
-
-diff_tdf = pd.DataFrame({'training': diff_t})
-diff_vdf = pd.DataFrame({'validation' : diff_v})
-thresh = 50
-
-print('============= show LR result =============')
-print('Train set mse:', mean_squared_error(y_train, y_pre_t))
-print('Val set mse:', mean_squared_error(y_val, y_pre_v))
-print('data of large error in training (thresh = {}):'.format(thresh))
-print(x_train.iloc[diff_tdf[abs(diff_tdf['training'].astype(int)) > thresh].index.tolist()])
-print('data of large error in validation (thresh = {}):'.format(thresh))
-print(x_val.iloc[diff_vdf[abs(diff_vdf['validation'].astype(int)) > thresh].index.tolist()])
-print('==========================================\n')
+print(x_train.shape, y_train.shape)
 
 # Gradient boosting Regression
 print('boosting Regression')
-gbr = GradientBoostingRegressor(learning_rate=0.1, n_estimators=100, max_depth=3)
+
+params = {'n_estimators': 200,
+          'max_depth': 4,
+          'learning_rate': 0.05,
+          'verbose': 2}
+gbr = GradientBoostingRegressor(**params)
 gbr.fit(x_train, y_train)
+
+
+# plt feature importance
+feature_importance = gbr.feature_importances_
+sorted_idx = np.argsort(feature_importance)
+pos = np.arange(sorted_idx.shape[0]) + .5
+fig = plt.figure(figsize=(12, 6))
+plt.subplot(1, 2, 1)
+plt.barh(pos, feature_importance[sorted_idx], align='center')
+plt.yticks(pos, np.array(x_train.columns)[sorted_idx])
+plt.title('Feature Importance (MDI)')
+
+result = permutation_importance(gbr, x_val, y_val, n_repeats=10,
+                                random_state=42, n_jobs=2)
+sorted_idx = result.importances_mean.argsort()
+plt.subplot(1, 2, 2)
+plt.boxplot(result.importances[sorted_idx].T,
+            vert=False, labels=np.array(x_train.columns)[sorted_idx])
+plt.title("Permutation Importance (test set)")
+fig.tight_layout()
+plt.savefig('feature_importances.png')
 
 # plot prediction result
 y_pre_t = gbr.predict(x_train)
@@ -166,9 +166,39 @@ ax[1].plot(diff_v, label='diff')
 ax[1].legend(loc='upper left')
 plt.savefig('gbr_predict.png')
 
+pred_test = gbr.predict(x_test)
+
+# Predict using gradient boosting regression
+# print('setting prediction...')
+# pred_test = []
+# test_len = len(x_test)
+# i = 0
+# inactive_cnt = 0
+# while i < test_len:
+#     if (x_test['shop_id'].iloc[i], x_test['item_id'].iloc[i]) in active_shop_item :
+#         pred_test.append(gbr.predict([x_test.iloc[i]]))
+#     else :
+#         inactive_cnt += 1
+#         pred_test.append(0)
+#     i += 1
+
+# print('inactive ratio = {}'.format(inactive_cnt / test_len))
+
 diff_tdf = pd.DataFrame({'training': diff_t})
 diff_vdf = pd.DataFrame({'validation' : diff_v})
+
+# for i in range(len(diff_vdf)):
+#     print('expected {}, get {}'.format(y_val[i], y_pre_v[i]))
+
 thresh = 50
+
+submission = pd.DataFrame({
+    'ID':data_test['ID'],
+    'item_cnt_month':pred_test
+})
+submission.to_csv('submission.csv', index=False)
+
+submission.head()
 
 print('============= show gbr result =============')
 print('Train set mse:', mean_squared_error(y_train, y_pre_t))
@@ -179,53 +209,5 @@ print('data of large error in validation (thresh = {}):'.format(thresh))
 print(x_val.iloc[diff_vdf[abs(diff_vdf['validation'].astype(int)) > thresh].index.tolist()])
 print('===========================================\n')
 
-# XGBoost
-print('xgboost Regression')
-xgbc = XGBRegressor(base_score=0.5, booster='gbtree', random_state=0,
-       reg_alpha=0, reg_lambda=1, scale_pos_weight=1, seed=None,
-       silent=None, subsample=1, verbosity=1)
-xgbc.fit(x_train, y_train)
-
-
-# plot prediction result
-y_pre_t = xgbc.predict(x_train)
-y_pre_v = xgbc.predict(x_val)
-diff_t = y_pre_t - y_train
-diff_v = y_pre_v - y_val
-
-fig, ax = plt.subplots(2, figsize=(20, 10))
-ax[0].set_title('xgbc res train')
-ax[0].plot(diff_t, label='diff')
-ax[0].legend(loc='upper left')
-ax[1].set_title('xgbc res val')
-ax[1].plot(diff_v, label='diff')
-ax[1].legend(loc='upper left')
-plt.savefig('xgbc_predict.png')
-
-diff_tdf = pd.DataFrame({'training': diff_t})
-diff_vdf = pd.DataFrame({'validation' : diff_v})
-thresh = 50
-
-print('============= show xgbc result =============')
-print('Train set mse:', mean_squared_error(y_train, y_pre_t))
-print('Val set mse:', mean_squared_error(y_val, y_pre_v))
-print('data of large error in training (thresh = {}):'.format(thresh))
-print(x_train.iloc[diff_tdf[abs(diff_tdf['training'].astype(int)) > thresh].index.tolist()])
-print('data of large error in validation (thresh = {}):'.format(thresh))
-print(x_val.iloc[diff_vdf[abs(diff_vdf['validation'].astype(int)) > thresh].index.tolist()])
-print('============================================\n')
-
-# Predict using gradient boosting regression
-pred_test = gbr.predict(x_test)
-
-
-
-submission = pd.DataFrame({
-    'ID':data_test['ID'],
-    'item_cnt_month':pred_test
-})
-submission.to_csv('submission.csv', index=False)
-
-submission.head()
 
 print('process complete')
