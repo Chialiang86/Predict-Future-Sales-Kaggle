@@ -48,7 +48,7 @@ $ python preprocessing.py
 
 - training.py : 讀取 training.pkl, testing.pkl 進行訓練以及分析
 ```shell
-$ python testing.py
+$ python training.py
 ```
 執行後會產生 submission.csv
 
