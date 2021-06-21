@@ -5,6 +5,7 @@ tags: DSAI, python
 # Predict-Future-Sales Kaggle
 
 - 詳細報告：[report link](https://docs.google.com/presentation/d/1nMD0G22-CNBULoP0P4Gtn9MAQsO_bTo0vI2hzNKGz1k/edit?usp=sharing)
+- data [training](https://drive.google.com/file/d/1vOt8wdkSE-ulW5QVv6P2KDA83ARNWgrU/view?usp=sharing) [testing](https://drive.google.com/file/d/1ujWDRJztMpUUIK-m5dqlzNkmX_UXJ9E8/view?usp=sharing)
 
 ## 執行方式
 
